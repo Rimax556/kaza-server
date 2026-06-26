@@ -11,13 +11,22 @@ admin.initializeApp({
 const db = admin.firestore();
 const messaging = admin.messaging();
 
-// Écoute les nouveaux messages
 db.collectionGroup('messages').onSnapshot(async (snap) => {
   for (const change of snap.docChanges()) {
     if (change.type !== 'added') continue;
     const msg = change.doc.data();
     const toUid = msg.toUid;
-    if (!toUid) continue;
+    const fromUid = msg.fromUid;
+    if (!toUid || !fromUid) continue;
+
+    const convRef = change.doc.ref.parent.parent;
+    if (convRef) {
+      await convRef.update({
+        unreadBy: admin.firestore.FieldValue.arrayUnion(toUid),
+        lastMessage: msg.text || '',
+        lastMessageAt: admin.firestore.Timestamp.now(),
+      });
+    }
 
     const userDoc = await db.collection('users').doc(toUid).get();
     if (!userDoc.exists) continue;
@@ -28,7 +37,7 @@ db.collectionGroup('messages').onSnapshot(async (snap) => {
 
     let senderName = "Quelqu'un";
     try {
-      const senderDoc = await db.collection('users').doc(msg.fromUid).get();
+      const senderDoc = await db.collection('users').doc(fromUid).get();
       if (senderDoc.exists) senderName = senderDoc.data().name || senderName;
     } catch (_) {}
 
@@ -44,7 +53,6 @@ db.collectionGroup('messages').onSnapshot(async (snap) => {
   }
 });
 
-// Écoute les nouvelles annonces
 db.collection('properties').onSnapshot(async (snap) => {
   for (const change of snap.docChanges()) {
     if (change.type !== 'added') continue;
